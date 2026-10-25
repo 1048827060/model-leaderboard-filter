@@ -49,20 +49,56 @@ SUB_PRIORITY = ["coding", "math", "hard", "english", "chinese", "multilingual",
                 "long", "short", "french", "spanish", "japanese"]
 
 # ---------------------------------------------------------------------------
-# 国产 / 国外 识别（按模型名 + 机构名关键字匹配，命中即「国产」）
+# 国产 / 国外 识别
+# 分层判定：① 机构名(org)硬规则（最可靠，org 字段是厂商自己登记的）
+#            ② 模型名 + 机构名关键词回退
+# 曾经的事故：Meta 的模型系列叫 "Muse Spark"，被关键词 "spark"（讯飞星火）
+# 误判成国产；小米 MiMo 没进关键词表被判成国外。故 org 硬规则优先。
 # ---------------------------------------------------------------------------
+
+# 机构级：已知国外厂商（org 命中即「国外」，优先级最高）
+FOREIGN_ORGS = [
+    "meta", "google", "deepmind", "alphabet", "anthropic", "openai", "xai",
+    "x.ai", "mistral", "microsoft", "msft", "cohere", "ai21", "amazon",
+    "aws", "bedrock", "nvidia", "databricks", "stability", "perplexity",
+    "inflection", "ai2", "allen ai", "allenai", "eleuther", "bigcode",
+    "huggingface", "together ai", "anyscale", "snowflake", "salesforce",
+    "apple", "ibm", "intel", "amd", "reka", "writer", "liquid ai",
+]
+
+# 机构级：已知国产厂商（org 命中即「国产」）
+DOMESTIC_ORGS = [
+    "alibaba", "aliyun", "damo", "alimo", "tencent", "hunyuan", "baidu",
+    "bytedance", "volcengine", "doubao", "zhipu", "zhipuai", "zai",
+    "moonshot", "deepseek", "01.ai", "01-ai", "stepfun", "minimax",
+    "iflytek", "sensetime", "shanghai ai lab", "shanghaiai", "openbmb",
+    "modelbest", "internlm", "thudm", "skywork", "xverse", "wanka",
+    "baichuan", "xiaomi", "mimo", "metax", "flagopen",
+]
+
+# 模型名关键词：只保留高置信度、不易误伤模型的词
+# （已剔除 "spark"——会误伤 Meta Muse Spark；"ling"——过短易误伤）
 DOMESTIC_KW = [
     "qwen", "alibaba", "aliyun", "alimo", "damo", "deepseek", "zhipu", "zhipuai",
-    "glm", "chatglm", "internlm", "telechat", "tencent", "hunyuan", "bytedance",
-    "doubao", "baidu", "ernie", "moonshot", "kimi", "stepfun", "step-", "minimax",
-    "baichuan", "01-ai", "01.ai", "yi-", "iflytek", "spark", "sensetime", "sensechat",
-    "shanghai ai lab", "ling", "skywork", "xverse", "wanka", "modelbest", "abab",
-    "flagopen", "metax", "taiji", "pangu", "betty", "yuewen", "thudm", "visualglm",
+    "glm", "chatglm", "z-ai", "zai", "internlm", "telechat", "tencent", "hunyuan",
+    "bytedance", "doubao", "baidu", "ernie", "moonshot", "kimi", "stepfun",
+    "minimax", "baichuan", "01-ai", "01.ai", "yi-", "iflytek", "星火", "讯飞",
+    "sensetime", "sensechat", "shanghai ai lab", "skywork", "xverse", "wanka",
+    "modelbest", "abab", "flagopen", "metax", "taiji", "pangu", "betty",
+    "yuewen", "thudm", "visualglm", "xiaomi", "mimo", "volcengine", "openbmb",
 ]
 
 
 def region_of(model, org):
+    o = str(org or "").lower().strip()
     s = (str(model) + " " + str(org)).lower()
+    # ① 机构硬规则：国外厂商优先（防止 Muse Spark 之类被模型名误伤）
+    if o and any(k in o for k in FOREIGN_ORGS):
+        return "国外"
+    # ② 机构硬规则：国产厂商
+    if o and any(k in o for k in DOMESTIC_ORGS):
+        return "国产"
+    # ③ 模型名关键词回退
     if any(k in s for k in DOMESTIC_KW):
         return "国产"
     return "国外"
@@ -92,8 +128,8 @@ PRICE = {
     "glm-z1": (1.40, 4.20), "doubao": (0.07, 0.14), "doubao-pro": (0.14, 0.28),
     "doubao-1.5": (0.10, 0.40), "ernie": (0.50, 0.50), "ernie-4.5": (0.50, 0.50),
     "kimi": (1.00, 1.00), "moonshot": (1.00, 1.00), "minimax": (0.42, 1.05),
-    "abab": (0.42, 1.05), "baichuan": (0.50, 0.50), "step": (0.50, 0.50),
-    "yi-": (0.50, 0.50), "spark": (0.50, 0.50), "internlm": (0.30, 0.30),
+    "abab": (0.42, 1.05),     "baichuan": (0.50, 0.50), "step": (0.50, 0.50),
+    "yi-": (0.50, 0.50), "internlm": (0.30, 0.30),
     "phi-4": (0.10, 0.10), "phi-3": (0.10, 0.10), "command": (1.00, 3.00),
     "nova": (0.80, 3.20), "grok": (5.00, 15.00), "jamba": (0.50, 1.50),
 }
@@ -326,6 +362,7 @@ button.go { flex:1; background:#1f6feb; color:#fff; border:none; border-radius:1
 button.go:active { transform:scale(.98) }
 .chips { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap }
 .chip { background:#1a1c20; color:#c4c8cd; border:1px solid #2a2d33; border-radius:18px; padding:6px 14px; font-size:13px; cursor:pointer }
+.chip.active { background:#1f6feb; color:#fff; border-color:#1f6feb }
 .note { font-size:12px; color:#c4c8cd; line-height:1.7; background:#16181d; border:1px solid #2a2d33; border-radius:12px; padding:12px 14px; margin-bottom:14px }
 .note b { color:#8ab4f8 }
 .ans { margin-top:14px; display:none }
@@ -369,9 +406,9 @@ td.topv { color:#ffd54a; font-weight:700 }
 <div class="sub">更新于 __NOW__ · LMArena 人类盲测榜（匿名对战，最难刷榜）__LOCAL__</div>
 
 <div class="note">
-<b>怎么用：</b>下面一句话说你想干啥，点「推荐模型」。它会按该类别给出<b>三组各前 5 名</b>：
-<b>总榜</b>（综合最强）、<b>国外</b>（仅海外模型）、<b>国内</b>（仅国产模型），并标出
-价格与<b>性价比</b>（★最划算）。怕判错可点下方类别按钮。<br>
+<b>怎么用：</b>下面一句话说你想干啥，点「推荐模型」。它会列出该类别<b>前 5 名候选</b>，
+点 <b>全部 / 国内 / 国外</b> 可分别查看总榜、国产、海外各前 5 名，并标出价格与<b>性价比</b>（★最划算）。
+怕判错可点下方类别按钮。<br>
 <b>性价比</b> = 该榜分数 ÷ 参考均价（每百万 token 美元，价格取自内置参考表，可能过时；
 价格未知/开源自部署标「—」）。想看完整排名和性价比榜，点下方「展开完整榜单」。
 </div>
@@ -386,6 +423,7 @@ td.topv { color:#ffd54a; font-weight:700 }
   </div>
   <div id="ans" class="ans">
     <h2 id="ansLabel"></h2>
+    <div class="chips" id="recoSeg"></div>
     <div id="ansList"></div>
   </div>
 </div>
@@ -451,27 +489,40 @@ function candHtml(m,i,best){
     + "<b>"+m.model+"</b> <span class='org'>"+m.org+"</span>"
     + "<span class='meta'>分数 "+m.score+" · "+priceStr(m)+" · "+val+star+flag+"</span></div>";
 }
-function section(title, list, best){
-  let h="<div class='sech'><div class='sect'>"+title
-    + "<span class='cnt'>共 "+list.length+" 个</span></div>";
-  if(!list.length){ h+="<div class='empty'>（暂无可推荐模型）</div>"; }
-  list.forEach((m,i)=>{ h+=candHtml(m,i,best); });
-  h+="</div>";
-  return h;
+const RECO_SEGS=[
+  {k:"all",      t:"全部 · 总榜", title:"总榜前 5（综合最强）"},
+  {k:"domestic", t:"国内",        title:"国内前 5（国产模型）"},
+  {k:"foreign",  t:"国外",        title:"国外前 5（海外模型）"},
+];
+let recoRegion="all", recoData={};
+function renderSeg(){
+  document.getElementById("recoSeg").innerHTML=RECO_SEGS.map(s=>
+    "<span class='chip"+(s.k===recoRegion?" active":"")+"' onclick='setRecoRegion(\""+s.k+"\")'>"+s.t+"</span>"
+  ).join("");
+}
+function setRecoRegion(k){ recoRegion=k; renderSeg(); renderRecoList(); }
+function renderRecoList(){
+  const seg=RECO_SEGS.find(s=>s.k===recoRegion)||RECO_SEGS[0];
+  const list=recoData[recoRegion]||[];
+  // ★最划算 在当前视图自己的候选里选，保证标记一定可见
+  let best=null;
+  list.forEach(m=>{ if(m.value!=null && (best==null||m.value>best.value)) best=m; });
+  let html="<div class='sect'>"+seg.title+"<span class='cnt'>共 "+list.length+" 个</span></div>";
+  if(!list.length){ html+="<div class='empty'>（暂无可推荐模型）</div>"; }
+  list.forEach((m,i)=>{ html+=candHtml(m,i,best); });
+  document.getElementById("ansList").innerHTML=html;
 }
 function renderReco(a){
   const all=(BOARDS[a]||BOARDS["text"]);
-  const total=all.slice(0,5);
-  const foreign=all.filter(m=>m.region==="国外").slice(0,5);
-  const domestic=all.filter(m=>m.region==="国产").slice(0,5);
-  let best=null;
-  all.forEach(m=>{ if(m.value!=null && (best==null||m.value>best.value)) best=m; });
+  recoData={
+    all:      all.slice(0,5),
+    foreign:  all.filter(m=>m.region==="国外").slice(0,5),
+    domestic: all.filter(m=>m.region==="国产").slice(0,5),
+  };
+  recoRegion="all";
   document.getElementById("ansLabel").textContent="「"+LABELS[a]+"」推荐";
-  let html="";
-  html += section("总榜前 5（综合最强）", total, best);
-  html += section("国外前 5（仅海外模型）", foreign, best);
-  html += section("国内前 5（仅国产模型）", domestic, best);
-  document.getElementById("ansList").innerHTML=html;
+  renderSeg();
+  renderRecoList();
   document.getElementById("ans").classList.add("show");
 }
 function reco(){ const t=document.getElementById("q").value.trim(); if(!t)return; renderReco(classify(t)); }
