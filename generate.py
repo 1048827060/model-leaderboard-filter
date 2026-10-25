@@ -8,11 +8,11 @@
 
 零第三方依赖（仅用标准库），可在 GitHub Actions 上每日自动运行。
 
-数据源说明（按优先级自动探测）：
-  1) lmarena-ai/leaderboard-dataset  —— LMArena 官方每日更新的数据集（推荐）
-  2) lmsys/chatbot_arena_leaderboard —— 旧版数据集（兜底）
+数据源：lmarena-ai/leaderboard-dataset（LMArena 官方每日更新的数据集）
+  - 选 text arena 的 latest 一期、过滤 category==overall 得到总榜
+  - 用各 category 的分值做「总分与分项背离」抗刷榜检查
 若 HuggingFace datasets-server 要求鉴权，可在仓库 Secrets 配置 HF_TOKEN
-（设置 → Secrets → Actions → 新建 HF_TOKEN），脚本会自动带上。
+（Settings → Secrets → Actions → New repository secret）。
 
 用法：
     python3 generate.py            # 生成到 ./public/index.html
@@ -31,16 +31,20 @@ import html
 UA = {"User-Agent": "Mozilla/5.0 (model-leaderboard-tool/1.0)"}
 HF_BASE = "https://datasets-server.huggingface.co"
 
-# 候选数据源（按顺序尝试，第一个能解析出榜单的即用）
+# 候选数据源（按顺序尝试，第一个能解析出总榜的即用）
 CANDIDATES = [
-    "lmarena-ai/leaderboard-dataset",      # 官方每日更新数据集
-    "lmsys/chatbot_arena_leaderboard",     # 旧版数据集
+    "lmarena-ai/leaderboard-dataset",      # 官方每日更新数据集（推荐）
+    "lmsys/chatbot_arena_leaderboard",     # 旧版数据集（兜底）
 ]
 
-# 取前 N 名展示
-TOP_N = 40
-# 票数低于此值视为「样本不足，排名不稳定」
-VOTES_UNSTABLE = 100
+TOP_N = 40                 # 展示前 N 名
+VOTES_UNSTABLE = 100       # 票数低于此值视为样本不足
+ROWS_PER_PAGE = 100        # HF datasets-server 单页上限
+MAX_PAGES = 40             # 最多抓 4000 行
+# 分项优先级（用于挑出要展示/参与背离检查的能力维度）
+SUB_PRIORITY = ["coding", "math", "hard", "english", "chinese", "multilingual",
+                "instruction", "reasoning", "knowledge", "vision", "vqa",
+                "long", "short", "french", "spanish", "japanese"]
 
 
 def http_get(url, timeout=40):
@@ -68,44 +72,55 @@ def _find(names, *keys):
 
 
 def discover_configs(dataset):
-    """返回该数据集的配置列表；单配置返回 [None]。"""
+    """返回 [(config, split), ...]，优先 text arena 的 latest 一期。"""
     ds = urllib.parse.quote(dataset)
-    try:
-        j = _json(f"{HF_BASE}/info?dataset={ds}")
-    except Exception:
-        j = {}
-    if isinstance(j, dict):
-        if j.get("features"):
-            return [None]
-        di = j.get("dataset_info") or {}
-        if di:
-            cfgs = list(di.keys())
-            # 优先 overall / text / default 这类"总榜"
-            prio = {"overall": 0, "text": 1, "default": 2}
-            cfgs.sort(key=lambda c: prio.get((c or "").lower(), 9))
-            return cfgs
     try:
         s = _json(f"{HF_BASE}/splits?dataset={ds}")
-        cfgs = [x.get("config") for x in s.get("splits", []) if x.get("config")]
-        if cfgs:
-            return cfgs
+        raw = [(x.get("config"), x.get("split") or "train")
+               for x in s.get("splits", []) if x.get("config")]
     except Exception:
-        pass
-    return []
+        raw = []
+    # 同一 config 只保留 latest（若没有则保留原 split）
+    best = {}
+    for cfg, sp in raw:
+        if cfg not in best or sp == "latest":
+            best[cfg] = sp
+    pairs = list(best.items())
+    prio = {"text": 0, "text_style_control": 1, "vision": 2,
+            "vision_style_control": 3, "webdev": 4, "search": 10,
+            "document": 10, "agent": 20, "text_to_image": 30,
+            "image_edit": 30, "text_to_video": 30, "image_to_video": 30,
+            "video_edit": 30, "default": 9}
+    pairs.sort(key=lambda p: prio.get((p[0] or "").lower(), 15))
+    return pairs or [(None, "train")]
 
 
-def fetch_one(dataset, config):
-    """尝试解析单个 (dataset, config)，成功返回 (records, mapping)。"""
+def fetch_one(dataset, config, split):
+    """解析单个 (dataset, config, split)；成功返回 (records, mapping)。"""
     ds = urllib.parse.quote(dataset)
-    info_url = f"{HF_BASE}/info?dataset={ds}"
+    base = f"{HF_BASE}/rows?dataset={ds}"
     if config:
-        info_url += "&config=" + urllib.parse.quote(str(config))
-    j = _json(info_url)
-    features = j.get("features")
-    if not features and isinstance(j.get("dataset_info"), dict) and config:
-        features = j["dataset_info"].get(config, {}).get("features")
+        base += "&config=" + urllib.parse.quote(str(config))
+    base += f"&split={urllib.parse.quote(split)}"
+
+    # 分页抓取（HF 单页上限 100）
+    all_rows = []
+    features = None
+    for p in range(MAX_PAGES):
+        page = _json(f"{base}&offset={p * ROWS_PER_PAGE}&length={ROWS_PER_PAGE}")
+        if features is None:
+            features = page.get("features")
+        rows = page.get("rows", [])
+        if not rows:
+            break
+        all_rows.extend(r.get("row", {}) for r in rows)
+        if len(rows) < ROWS_PER_PAGE:
+            break
+
+    if not all_rows:
+        raise ValueError("未返回任何行")
     if not features:
-        raise ValueError("无法获取字段结构")
+        features = [{"name": k} for k in all_rows[0].keys()]
     names = [f.get("name") for f in features]
 
     col_model = _find(names, "model") or names[0]
@@ -113,31 +128,49 @@ def fetch_one(dataset, config):
     col_score = _find(names, "arena", "overall") or _find(names, "score", "rating", "elo")
     col_rank = _find(names, "rank")
     col_votes = _find(names, "vote")
+    col_cat = _find(names, "categor")
 
-    meta = {col_model, col_org, col_score, col_rank, col_votes}
-    skip = {"license", "95% ci", "ci", "95%_ci", "95% confidence interval"}
-    sub_cols = [n for n in names if n and n not in meta and (n or "").lower() not in skip]
-    keep_sub = []
-    for n in sub_cols:
-        nl = (n or "").lower()
-        if any(k in nl for k in ("coding", "math", "vision", "reason", "knowledge",
-                                  "hard", "english", "chinese", "multiturn", "instruction",
-                                  "full", "lmsys", "style")):
-            keep_sub.append(n)
-    keep_sub = keep_sub[:6] or sub_cols[:4]
+    if not col_score:
+        raise ValueError("找不到分数列")
 
-    rows_url = f"{HF_BASE}/rows?dataset={ds}"
-    if config:
-        rows_url += "&config=" + urllib.parse.quote(str(config))
-    rows_url += "&split=train&offset=0&length=500"
-    data = _json(rows_url)
-    rows = [r.get("row", {}) for r in data.get("rows", [])]
+    # 按 category 透视：model -> {category: score}
+    pivot = {}
+    for row in all_rows:
+        m = str(row.get(col_model) or "?")
+        try:
+            sc = float(row.get(col_score))
+        except (TypeError, ValueError):
+            continue
+        cat = str(row.get(col_cat)) if col_cat else None
+        if cat:
+            pivot.setdefault(m, {})[cat] = sc
+
+    # 选总榜行
+    if col_cat:
+        board = [r for r in all_rows
+                 if str(r.get(col_cat)) in ("overall", "Overall", "ALL", "all")]
+        if not board:
+            board = all_rows
+    else:
+        board = all_rows
+
+    # 确定要展示的分项维度（取频率最高的若干 category，排除 overall）
+    from collections import Counter
+    freq = Counter()
+    for subs in pivot.values():
+        for c in subs:
+            if c and c.lower() != "overall":
+                freq[c] += 1
+    sub_order = sorted(freq.keys(),
+                       key=lambda c: (SUB_PRIORITY.index(c.lower()) if c.lower() in SUB_PRIORITY else 99,
+                                      -freq[c]))
+    sub_cols = sub_order[:6]
 
     records = []
-    for row in rows:
-        raw = row.get(col_score)
+    for row in board:
+        m = str(row.get(col_model) or "?")
         try:
-            score = float(raw)
+            score = float(row.get(col_score))
         except (TypeError, ValueError):
             continue
         votes_raw = row.get(col_votes)
@@ -145,14 +178,9 @@ def fetch_one(dataset, config):
             votes = int(float(votes_raw)) if votes_raw not in (None, "") else 0
         except (TypeError, ValueError):
             votes = 0
-        subs = {}
-        for s in keep_sub:
-            try:
-                subs[s] = float(row.get(s))
-            except (TypeError, ValueError):
-                subs[s] = None
+        subs = {c: pivot.get(m, {}).get(c) for c in sub_cols}
         records.append({
-            "model": str(row.get(col_model) or "?"),
+            "model": m,
             "org": str(row.get(col_org) or ""),
             "score": score,
             "votes": votes,
@@ -160,10 +188,11 @@ def fetch_one(dataset, config):
         })
 
     if len(records) < 3:
-        raise ValueError(f"仅解析到 {len(records)} 条，疑似字段不匹配")
+        raise ValueError(f"仅解析到 {len(records)} 条总榜记录")
+
     records.sort(key=lambda x: x["score"], reverse=True)
     mapping = {"model": col_model, "org": col_org, "score": col_score,
-               "rank": col_rank, "votes": col_votes, "subs": keep_sub,
+               "rank": col_rank, "votes": col_votes, "subs": sub_cols,
                "dataset": dataset, "config": config}
     return records, mapping
 
@@ -173,17 +202,17 @@ def fetch_lmarena():
     last_err = None
     for dataset in CANDIDATES:
         try:
-            configs = discover_configs(dataset)
+            pairs = discover_configs(dataset)
         except Exception as e:
             last_err = f"{dataset}: 结构探测失败 {e}"
             continue
-        for config in configs:
+        for config, split in pairs:
             try:
-                recs, mp = fetch_one(dataset, config)
-                label = dataset + (f" (config={config})" if config else "")
+                recs, mp = fetch_one(dataset, config, split)
+                label = dataset + (f" (config={config}, split={split})" if config else "")
                 return recs, mp, label
             except Exception as e:
-                last_err = f"{dataset}/{config}: {e}"
+                last_err = f"{dataset}/{config}/{split}: {e}"
                 continue
     raise RuntimeError(last_err or "所有候选数据源均不可用")
 
@@ -200,7 +229,7 @@ def analyze(records):
         if r["votes"] < VOTES_UNSTABLE:
             flags.append("样本不足·排名不稳定")
 
-        # 分项背离：Overall 进入前列，但各分项普遍显著靠后
+        # 分项背离：Overall 进前列，但各分项普遍显著靠后
         valid_subs = {k: v for k, v in r["subs"].items() if v is not None}
         if valid_subs and r["rank"] <= 20:
             ratios = []
@@ -283,7 +312,7 @@ td.top{{color:#ffd54a;font-weight:700}}
 <div class="note">
 <b>为什么信这个榜？</b> LMArena 由真实用户盲测对战、模型名匿名，厂商无法预知题目或干预结果，是公认的「人类偏好」基准，抗刷榜能力最强。<br>
 <b>怎么看「⚠」标记？</b> 标红代表：①票数过少、统计不稳；②总分高但各分项普遍靠后（总分与分项背离，疑似异常）。遇到标红请谨慎对待。<br>
-<b>数据源：</b> {html.escape(str(mapping.get('dataset', 'LMArena')))}。若页面提示鉴权失败，可在仓库 Settings → Secrets → Actions 添加 <code>HF_TOKEN</code>。
+<b>数据源：</b> {html.escape(str(mapping.get('dataset', 'LMArena')))}（text arena · 总榜）。若页面提示鉴权失败，可在仓库 Settings → Secrets → Actions 添加 <code>HF_TOKEN</code>。
 </div>
 
 <table>
@@ -313,7 +342,7 @@ def main():
         records = recs
         mapping = mp
         status.append({"name": "LMArena 盲测榜", "ok": True,
-                       "detail": f"成功解析 {len(records)} 个模型（源：{label}；字段：{mp['score']}）"})
+                       "detail": f"成功解析 {len(records)} 个模型（源：{label}；分数列：{mp['score']}）"})
     except Exception as e:
         status.append({"name": "LMArena 盲测榜", "ok": False, "detail": f"拉取失败：{e}"})
 
