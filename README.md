@@ -20,9 +20,11 @@
    **GitHub Actions**。
 3. **跑一次**：`Actions` 标签页点 `更新模型榜单` → `Run workflow`。
    完成后页面顶部会显示你的链接：
-   `https://<你的用户名>.github.io/<仓库名>/`
+   `https://1048827060.github.io/model-leaderboard-filter/`
 
-把这个链接**收藏到手机浏览器**，之后每天自动更新。
+把这个链接**收藏到手机浏览器**，之后每天（UTC 0/12 点）自动更新。
+
+> 已部署示例：https://1048827060.github.io/model-leaderboard-filter/
 
 > 想立刻看效果？在 Actions 页手动 Run workflow 一次即可，不用等定时。
 
@@ -37,8 +39,9 @@ python3 generate.py --local
 
 ## 关于「抗刷榜」与数据边界（重要）
 
-- **主源 LMArena**：真实用户盲测对战、模型匿名，厂商无法预知题目或操纵结果，
-  是公认的「人类偏好」基准，抗刷榜能力最强。
+- **主源 LMArena**：数据源为官方每日更新的数据集 `lmarena-ai/leaderboard-dataset`
+  （text arena · 总榜 `category=overall`）。真实用户盲测对战、模型匿名，厂商无法预知
+  题目或操纵结果，是公认的「人类偏好」基准，抗刷榜能力最强。
 - **当前为单主源 + 内部一致性检查**。脚本已预留第二独立源（如 OpenCompass /
   Artificial Analysis）的接入位——在 `generate.py` 的 `fetch_lmarena()` 之后
   追加一个返回相同结构 `records` 的源，并在 `main()` 里并入 `analyze()` 即可做
