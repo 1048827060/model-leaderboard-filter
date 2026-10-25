@@ -1,0 +1,45 @@
+name: 更新模型榜单
+
+on:
+  schedule:
+    # 每天 UTC 0 点、12 点自动刷新（手机打开即最新）
+    - cron: "0 0,12 * * *"
+  workflow_dispatch: {}      # 也支持手动在 Actions 页点 Run workflow 立即刷新
+
+permissions:
+  contents: read
+
+# 允许一个并发部署，跳过在进行中的运行之间的排队运行
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # 检出默认分支上的脚本与页面模板
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 生成榜单页面
+        run: python3 generate.py
+      - name: 上传 Pages 产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 部署到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
