@@ -341,6 +341,11 @@ button.go:active { transform:scale(.98) }
 .cand .org { font-size:12px; color:#80868b }
 .cand .meta { font-size:12px; color:#9aa0a6; width:100%; padding-left:28px }
 .star { color:#ffd54a; font-weight:700; font-size:12px }
+.sech { border-top:1px solid #222428; padding-top:2px; margin-top:12px }
+.sech:first-of-type { border-top:none; margin-top:6px }
+.sect { font-size:13px; font-weight:700; color:#8ab4f8; margin:6px 0 2px; padding-left:2px }
+.sect .cnt { color:#6b7075; font-weight:600; font-size:11px; margin-left:6px }
+.empty { font-size:12px; color:#6b7075; padding:4px 0 10px }
 details { margin-top:18px }
 summary { cursor:pointer; font-size:14px; font-weight:600; color:#c4c8cd; padding:8px 0 }
 .bar { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; align-items:center }
@@ -364,8 +369,9 @@ td.topv { color:#ffd54a; font-weight:700 }
 <div class="sub">更新于 __NOW__ · LMArena 人类盲测榜（匿名对战，最难刷榜）__LOCAL__</div>
 
 <div class="note">
-<b>怎么用：</b>下面一句话说你想干啥，点「推荐模型」。它会列出该类别<b>前几名候选</b>，并标出
-<b>国产 / 国外</b>、价格与<b>性价比</b>。怕判错可点下方类别按钮。<br>
+<b>怎么用：</b>下面一句话说你想干啥，点「推荐模型」。它会按该类别给出<b>三组各前 5 名</b>：
+<b>总榜</b>（综合最强）、<b>国外</b>（仅海外模型）、<b>国内</b>（仅国产模型），并标出
+价格与<b>性价比</b>（★最划算）。怕判错可点下方类别按钮。<br>
 <b>性价比</b> = 该榜分数 ÷ 参考均价（每百万 token 美元，价格取自内置参考表，可能过时；
 价格未知/开源自部署标「—」）。想看完整排名和性价比榜，点下方「展开完整榜单」。
 </div>
@@ -435,22 +441,36 @@ function priceStr(m){
   if(m.pin==null) return "价格未知/开源";
   return "$"+m.pin+"/"+m.pout+" 每M";
 }
+function candHtml(m,i,best){
+  const badge = m.region==="国产"
+    ? "<span class='badge cn'>国产</span>" : "<span class='badge fr'>国外</span>";
+  const star = (best && m.model===best.model) ? " <span class='star'>★最划算</span>" : "";
+  const flag = (m.flags&&m.flags.length) ? " <span class='star' style='color:#ff8a80'>⚠"+(m.flags[0])+"</span>" : "";
+  const val = m.value!=null ? "性价比 "+m.value : "性价比 —";
+  return "<div class='cand'><span class='rk'>"+(i+1)+"</span>"+badge
+    + "<b>"+m.model+"</b> <span class='org'>"+m.org+"</span>"
+    + "<span class='meta'>分数 "+m.score+" · "+priceStr(m)+" · "+val+star+flag+"</span></div>";
+}
+function section(title, list, best){
+  let h="<div class='sech'><div class='sect'>"+title
+    + "<span class='cnt'>共 "+list.length+" 个</span></div>";
+  if(!list.length){ h+="<div class='empty'>（暂无可推荐模型）</div>"; }
+  list.forEach((m,i)=>{ h+=candHtml(m,i,best); });
+  h+="</div>";
+  return h;
+}
 function renderReco(a){
-  const list=(BOARDS[a]||BOARDS["text"]).slice(0,5);
+  const all=(BOARDS[a]||BOARDS["text"]);
+  const total=all.slice(0,5);
+  const foreign=all.filter(m=>m.region==="国外").slice(0,5);
+  const domestic=all.filter(m=>m.region==="国产").slice(0,5);
   let best=null;
-  list.forEach(m=>{ if(m.value!=null && (best==null||m.value>best.value)) best=m; });
-  document.getElementById("ansLabel").textContent="「"+LABELS[a]+"」推荐前 5 名";
+  all.forEach(m=>{ if(m.value!=null && (best==null||m.value>best.value)) best=m; });
+  document.getElementById("ansLabel").textContent="「"+LABELS[a]+"」推荐";
   let html="";
-  list.forEach((m,i)=>{
-    const badge = m.region==="国产"
-      ? "<span class='badge cn'>国产</span>" : "<span class='badge fr'>国外</span>";
-    const star = (best && m.model===best.model) ? " <span class='star'>★最划算</span>" : "";
-    const flag = (m.flags&&m.flags.length) ? " <span class='star' style='color:#ff8a80'>⚠"+(m.flags[0])+"</span>" : "";
-    const val = m.value!=null ? "性价比 "+m.value : "性价比 —";
-    html += "<div class='cand'><span class='rk'>"+(i+1)+"</span>"+badge
-      + "<b>"+m.model+"</b> <span class='org'>"+m.org+"</span>"
-      + "<span class='meta'>分数 "+m.score+" · "+priceStr(m)+" · "+val+star+flag+"</span></div>";
-  });
+  html += section("总榜前 5（综合最强）", total, best);
+  html += section("国外前 5（仅海外模型）", foreign, best);
+  html += section("国内前 5（仅国产模型）", domestic, best);
   document.getElementById("ansList").innerHTML=html;
   document.getElementById("ans").classList.add("show");
 }
