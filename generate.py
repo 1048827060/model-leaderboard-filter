@@ -339,6 +339,7 @@ def build_html(boards, status, local=False):
     page = (page.replace("__NOW__", now)
                 .replace("__RECORDS__", rec_json)
                 .replace("__LABELS__", labels_json)
+                .replace("__STATUS__", status_html)
                 .replace("__LOCAL__", " · 本地调试模式" if local else ""))
     return page
 
@@ -348,146 +349,212 @@ TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>模型推荐器 · 候选列表 + 性价比榜</title>
+<title>模型推荐器</title>
 <style>
-* { box-sizing: border-box }
-body { margin:0; background:#0d0e10; color:#e6e6e6; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; padding:18px; max-width:720px; margin:0 auto }
-h1 { font-size:20px; margin:0 0 4px }
-.sub { font-size:12px; color:#9aa0a6; margin:0 0 14px }
-.box { background:#16181d; border:1px solid #2a2d33; border-radius:14px; padding:16px; margin-bottom:14px }
-input { width:100%; padding:13px 14px; font-size:15px; border-radius:10px; border:1px solid #2f333a; background:#0d0e10; color:#fff; outline:none }
-input:focus { border-color:#1f6feb }
-.row { display:flex; gap:10px; margin-top:10px }
-button.go { flex:1; background:#1f6feb; color:#fff; border:none; border-radius:10px; padding:13px; font-size:15px; font-weight:700; cursor:pointer }
-button.go:active { transform:scale(.98) }
-.chips { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap }
-.chip { background:#1a1c20; color:#c4c8cd; border:1px solid #2a2d33; border-radius:18px; padding:6px 14px; font-size:13px; cursor:pointer }
-.chip.active { background:#1f6feb; color:#fff; border-color:#1f6feb }
-.note { font-size:12px; color:#c4c8cd; line-height:1.7; background:#16181d; border:1px solid #2a2d33; border-radius:12px; padding:12px 14px; margin-bottom:14px }
-.note b { color:#8ab4f8 }
-.ans { margin-top:14px; display:none }
-.ans.show { display:block; animation:fade .3s }
-@keyframes fade { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
-.ans h2 { font-size:15px; color:#9aa0a6; margin:0 0 8px; font-weight:600 }
-.cand { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0; border-bottom:1px solid #222428 }
-.cand .rk { width:20px; height:20px; border-radius:50%; background:#2a2d33; color:#fff; font-size:11px; display:flex; align-items:center; justify-content:center; flex:0 0 auto }
-.badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px }
-.badge.cn { background:#0f3320; color:#81c995; border:1px solid #1f6f4a }
-.badge.fr { background:#0f2740; color:#8ab4f8; border:1px solid #1f4f8f }
-.cand b { font-size:15px }
-.cand .org { font-size:12px; color:#80868b }
-.cand .meta { font-size:12px; color:#9aa0a6; width:100%; padding-left:28px }
-.star { color:#ffd54a; font-weight:700; font-size:12px }
-.sech { border-top:1px solid #222428; padding-top:2px; margin-top:12px }
-.sech:first-of-type { border-top:none; margin-top:6px }
-.sect { font-size:13px; font-weight:700; color:#8ab4f8; margin:6px 0 2px; padding-left:2px }
-.sect .cnt { color:#6b7075; font-weight:600; font-size:11px; margin-left:6px }
-.empty { font-size:12px; color:#6b7075; padding:4px 0 10px }
-details { margin-top:18px }
-summary { cursor:pointer; font-size:14px; font-weight:600; color:#c4c8cd; padding:8px 0 }
-.bar { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; align-items:center }
-.tab { background:#1a1c20; color:#c4c8cd; border:1px solid #2a2d33; border-radius:20px; padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer }
-.tab.active { background:#1f6feb; color:#fff; border-color:#1f6feb }
-select { background:#0d0e10; color:#e6e6e6; border:1px solid #2f333a; border-radius:8px; padding:7px 10px; font-size:13px }
-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px }
-th,td { text-align:left; padding:9px 8px; border-bottom:1px solid #222428; white-space:nowrap }
-th { color:#9aa0a6; font-weight:600; font-size:11px }
-td.rk { color:#ffd54a; font-weight:700 }
-td.warn { color:#ff8a80; font-size:11px; font-weight:600 }
-td.topv { color:#ffd54a; font-weight:700 }
-.status { margin-top:16px; font-size:12px; color:#bdc1c6 }
-.status li { margin:4px 0 }
-.ok { color:#81c995; font-weight:700 } .bad { color:#ff8a80; font-weight:700 }
-.foot { margin-top:16px; font-size:11px; color:#6b7075; line-height:1.7 }
+:root{
+  --bg:#0a0b0d; --surface:#121317; --surface-2:#17181d; --surface-3:#23262c;
+  --line:#22242a; --line-soft:#191b20;
+  --text:#edeff2; --text-2:#9aa0a8; --text-3:#696f77;
+  --accent:#4b8ef7; --accent-soft:rgba(75,142,247,.13); --accent-line:rgba(75,142,247,.34);
+  --cn:#4ec98e; --cn-bg:rgba(78,201,142,.11);
+  --fr:#7fa8ef; --fr-bg:rgba(127,168,239,.11);
+  --gold:#f0c35c; --gold-bg:rgba(240,195,92,.11);
+  --warn:#ef8d7e; --warn-bg:rgba(239,141,126,.11);
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-pill:999px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);line-height:1.55;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;padding:30px 18px 44px;max-width:660px;margin:0 auto}
+
+header h1{font-size:21px;font-weight:700;letter-spacing:-.012em;margin:0}
+.stamp{font-size:11.5px;color:var(--text-3);margin:7px 0 0;letter-spacing:.01em}
+
+.hint{font-size:12.5px;color:var(--text-3);line-height:1.9;margin:22px 0 24px;padding-top:20px;border-top:1px solid var(--line-soft)}
+.hint b{color:var(--text-2);font-weight:600}
+
+.search{margin:0}
+.field{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:5px 5px 5px 16px;transition:border-color .16s}
+.field:focus-within{border-color:var(--accent-line)}
+.field input{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--text);
+  font-size:15px;padding:11px 0;font-family:inherit}
+.field input::placeholder{color:var(--text-3)}
+button.go{flex:0 0 auto;background:var(--accent);color:#fff;border:none;border-radius:11px;
+  padding:10px 17px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .15s}
+button.go:hover{opacity:.9}
+button.go:active{transform:scale(.97)}
+.chips{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.chip{background:var(--surface);color:var(--text-2);border:1px solid var(--line);border-radius:var(--r-pill);
+  padding:7px 15px;font-size:12.5px;cursor:pointer;transition:.15s;user-select:none}
+.chip:hover{color:var(--text)}
+.chip.active{background:var(--accent-soft);color:#9cc3ff;border-color:var(--accent-line)}
+
+.ans{margin-top:30px;display:none}
+.ans.show{display:block;animation:fade .28s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.eyebrow{font-size:11.5px;color:var(--text-3);font-weight:600;letter-spacing:.08em;margin-bottom:14px}
+.seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:3px;gap:2px;margin-bottom:20px}
+.segbtn{background:transparent;border:none;color:var(--text-2);border-radius:9px;padding:7px 15px;
+  font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s;white-space:nowrap}
+.segbtn:hover{color:var(--text)}
+.segbtn.active{background:var(--surface-3);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+
+.sect{font-size:15px;font-weight:650;color:var(--text);margin:0 0 4px;letter-spacing:-.005em}
+.sect .cnt{font-size:11px;color:var(--text-3);font-weight:500;margin-left:8px;letter-spacing:0}
+.empty{font-size:12.5px;color:var(--text-3);padding:8px 0 4px}
+.cand{display:grid;grid-template-columns:26px 1fr;gap:0 11px;padding:14px 0;border-bottom:1px solid var(--line-soft);align-items:start}
+.cand:last-child{border-bottom:none}
+.cand .rk{width:24px;height:24px;border-radius:50%;background:var(--surface-2);color:var(--text-3);
+  font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;
+  font-variant-numeric:tabular-nums;margin-top:1px}
+.cand .rk.top{color:var(--gold);background:var(--gold-bg)}
+.cand .body{min-width:0}
+.cand .line1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cand .line1 b{font-size:14.5px;font-weight:600;color:var(--text);letter-spacing:-.005em}
+.cand .org{font-size:11.5px;color:var(--text-3)}
+.cand .meta{margin-top:6px;font-size:12px;color:var(--text-2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cand .meta i{color:var(--text-3);font-style:normal}
+.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:var(--r-pill);flex:0 0 auto;letter-spacing:.01em}
+.badge.cn{color:var(--cn);background:var(--cn-bg)}
+.badge.fr{color:var(--fr);background:var(--fr-bg)}
+.star{color:var(--gold);background:var(--gold-bg);border-radius:var(--r-pill);padding:2px 8px;
+  font-size:11px;font-weight:600;flex:0 0 auto}
+.flag{color:var(--warn);background:var(--warn-bg);border-radius:var(--r-pill);padding:2px 8px;
+  font-size:11px;font-weight:500}
+
+details{margin-top:30px;border-top:1px solid var(--line-soft);padding-top:18px}
+summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text-2);list-style:none;
+  display:flex;align-items:center;gap:9px;user-select:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"";width:5px;height:5px;border-right:1.5px solid var(--text-3);
+  border-bottom:1.5px solid var(--text-3);transform:rotate(-45deg);transition:transform .18s;flex:0 0 auto}
+details[open] summary::before{transform:rotate(45deg)}
+.bar{display:flex;gap:8px;margin:16px 0 6px;flex-wrap:wrap;align-items:center}
+.bar .fl{font-size:11.5px;color:var(--text-3);margin-right:-3px}
+.tab{background:var(--surface);color:var(--text-2);border:1px solid var(--line);border-radius:var(--r-pill);
+  padding:7px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s}
+.tab:hover{color:var(--text)}
+.tab.active{background:var(--accent-soft);color:#9cc3ff;border-color:var(--accent-line)}
+select{background:var(--surface);color:var(--text-2);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:7px 10px;font-size:12.5px;outline:none;font-family:inherit;cursor:pointer}
+select:focus{border-color:var(--accent-line)}
+
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+th{font-size:10.5px;color:var(--text-3);font-weight:600;text-align:left;padding:10px 8px;
+  border-bottom:1px solid var(--line);letter-spacing:.06em;white-space:nowrap}
+td{padding:11px 8px;border-bottom:1px solid var(--line-soft);white-space:nowrap;vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+td.rk{color:var(--text-3);font-weight:600;font-variant-numeric:tabular-nums}
+td.rk.top{color:var(--gold)}
+td.m b{font-weight:600}
+td.m .org{font-size:11px;color:var(--text-3);margin-left:5px}
+td.num{font-variant-numeric:tabular-nums}
+td.dim{color:var(--text-3)}
+td.topv{color:var(--gold);font-weight:600;font-variant-numeric:tabular-nums}
+td.warn{color:var(--warn);font-size:11px;font-weight:500}
+
+.status{margin-top:26px;padding-top:18px;border-top:1px solid var(--line-soft)}
+.status-title{font-size:11px;color:var(--text-3);font-weight:600;letter-spacing:.08em}
+.status ul{list-style:none;padding:0;margin:9px 0 0;font-size:11.5px;color:var(--text-3);line-height:1.9}
+.ok{color:var(--cn);font-weight:700;margin-right:2px}
+.bad{color:var(--warn);font-weight:700;margin-right:2px}
+.foot{margin-top:20px;font-size:11px;color:#54595f;line-height:1.9}
 </style>
 </head>
 <body>
-<h1>模型推荐器</h1>
-<div class="sub">更新于 __NOW__ · LMArena 人类盲测榜（匿名对战，最难刷榜）__LOCAL__</div>
+<header>
+  <h1>模型推荐器</h1>
+  <p class="stamp">更新于 __NOW__ · LMArena 人类盲测榜（匿名对战，最难刷榜）__LOCAL__</p>
+</header>
 
-<div class="note">
-<b>怎么用：</b>下面一句话说你想干啥，点「推荐模型」。它会列出该类别<b>前 5 名候选</b>，
-点 <b>全部 / 国内 / 国外</b> 可分别查看总榜、国产、海外各前 5 名，并标出价格与<b>性价比</b>（★最划算）。
-怕判错可点下方类别按钮。<br>
-<b>性价比</b> = 该榜分数 ÷ 参考均价（每百万 token 美元，价格取自内置参考表，可能过时；
-价格未知/开源自部署标「—」）。想看完整排名和性价比榜，点下方「展开完整榜单」。
+<div class="hint">
+一句话说你想干啥，点<b>推荐</b>。结果按<b>全部 / 国内 / 国外</b>切换查看各前 5 名，标出价格与<b>性价比</b>（★ 最划算）。<br>
+性价比 = 该榜分数 ÷ 参考均价（每百万 token 美元，内置参考价可能过时；未知或开源自部署标「—」）。
+完整排名与性价比榜见下方「展开完整榜单」。
 </div>
 
-<div class="box">
-  <input id="q" placeholder="例如：帮我写个周报 / 写个爬虫代码 / 看看这张图里有什么" onkeydown="if(event.key==='Enter')reco()">
-  <div class="row"><button class="go" onclick="reco()">推荐模型</button></div>
+<div class="search">
+  <div class="field">
+    <input id="q" placeholder="想干啥？例如：帮我写个周报 / 写个爬虫 / 看看这张图" onkeydown="if(event.key==='Enter')reco()">
+    <button class="go" onclick="reco()">推荐</button>
+  </div>
   <div class="chips">
-    <span class="chip" onclick="pick('text')">💬 综合对话</span>
-    <span class="chip" onclick="pick('webdev')">💻 代码生成</span>
-    <span class="chip" onclick="pick('vision')">👁 视觉理解</span>
+    <span class="chip" onclick="pick('text')">综合对话</span>
+    <span class="chip" onclick="pick('webdev')">代码生成</span>
+    <span class="chip" onclick="pick('vision')">视觉理解</span>
   </div>
-  <div id="ans" class="ans">
-    <h2 id="ansLabel"></h2>
-    <div class="chips" id="recoSeg"></div>
-    <div id="ansList"></div>
-  </div>
+</div>
+
+<div id="ans" class="ans">
+  <div class="eyebrow" id="ansLabel"></div>
+  <div class="seg" id="recoSeg"></div>
+  <div id="ansList"></div>
 </div>
 
 <details>
-  <summary>展开完整榜单（候选列表 + 国产/国外筛选 + 性价比排序）</summary>
+  <summary>展开完整榜单与性价比榜</summary>
   <div class="bar" id="tabs"></div>
   <div class="bar">
-    <span style="font-size:13px;color:#9aa0a6">区域：</span>
+    <span class="fl">区域</span>
     <select id="region" onchange="renderBoard()">
       <option value="all">全部</option>
       <option value="国产">只看国产</option>
       <option value="国外">只看国外</option>
     </select>
-    <span style="font-size:13px;color:#9aa0a6">排序：</span>
+    <span class="fl">排序</span>
     <select id="sort" onchange="renderBoard()">
       <option value="score">按分数</option>
       <option value="value">按性价比</option>
     </select>
   </div>
-  <table id="board"><thead></thead><tbody></tbody></table>
+  <div class="table-wrap"><table id="board"><thead></thead><tbody></tbody></table></div>
 </details>
 
-<div class="status"><b>数据源状态</b><ul>__STATUS__</ul></div>
+<div class="status">
+  <div class="status-title">数据源状态</div>
+  <ul>__STATUS__</ul>
+</div>
 <div class="foot">
-本页由 GitHub Actions 每日自动生成 · 数据源 lmarena-ai/leaderboard-dataset（LMArena 官方每日更新）<br>
-价格为内置参考价（USD/百万 token），仅供性价比估算，实际以厂商官网为准。
+  GitHub Actions 每日自动生成 · 数据源 LMArena 官方盲测榜<br>
+  价格为内置参考价（USD / 百万 token），仅供性价比估算，实际以厂商官网为准
 </div>
 
 <script>
 const BOARDS = __RECORDS__;
 const LABELS = __LABELS__;
-const TIPS = {
-  text: "综合对话：写文案、聊天、总结、翻译、润色等日常文字活儿",
-  webdev: "代码生成：写程序、脚本、爬虫、修 bug、前后端开发",
-  vision: "视觉理解：看图、识别物体、读截图/文档图片、OCR"
-};
 const ARENA_TABS = [
-  {key:"text", label:"💬 综合对话"},
-  {key:"webdev", label:"💻 代码生成"},
-  {key:"vision", label:"👁 视觉理解"},
-  {key:"value", label:"💰 性价比"},
+  {key:"text", label:"综合对话"},
+  {key:"webdev", label:"代码生成"},
+  {key:"vision", label:"视觉理解"},
+  {key:"value", label:"性价比"},
 ];
 let curArena = "text";
 
 function classify(t){
-  const kw={webdev:["代码","编程","写代码","爬虫","程序","脚本","bug","调试","函数","api","前端","后端","算法","开发","代码生成","python","java","js"],
+  const kw={webdev:["代码","编程","写代码","爬虫","程序","脚本","bug","调试","函数","api","前端","后端","算法","开发","python","java","js"],
             vision:["图","图片","照片","视觉","识别","截图","ocr","画面","物体","这张"]};
   for(const a in kw){ if(kw[a].some(k=>t.includes(k))) return a; }
   return "text";
 }
 function priceStr(m){
-  if(m.pin==null) return "价格未知/开源";
-  return "$"+m.pin+"/"+m.pout+" 每M";
+  if(m.pin==null) return "价格未知 / 开源";
+  return "$"+m.pin+" / $"+m.pout+" 每M";
 }
 function candHtml(m,i,best){
   const badge = m.region==="国产"
     ? "<span class='badge cn'>国产</span>" : "<span class='badge fr'>国外</span>";
-  const star = (best && m.model===best.model) ? " <span class='star'>★最划算</span>" : "";
-  const flag = (m.flags&&m.flags.length) ? " <span class='star' style='color:#ff8a80'>⚠"+(m.flags[0])+"</span>" : "";
+  const star = (best && m.model===best.model) ? "<span class='star'>★ 最划算</span>" : "";
+  const flag = (m.flags&&m.flags.length) ? "<span class='flag'>⚠ "+m.flags[0]+"</span>" : "";
   const val = m.value!=null ? "性价比 "+m.value : "性价比 —";
-  return "<div class='cand'><span class='rk'>"+(i+1)+"</span>"+badge
-    + "<b>"+m.model+"</b> <span class='org'>"+m.org+"</span>"
-    + "<span class='meta'>分数 "+m.score+" · "+priceStr(m)+" · "+val+star+flag+"</span></div>";
+  return "<div class='cand'><span class='rk"+(i===0?" top":"")+"'>"+(i+1)+"</span>"
+    + "<div class='body'><div class='line1'>"+badge+"<b>"+m.model+"</b>"
+    + "<span class='org'>"+m.org+"</span>"+star+"</div>"
+    + "<div class='meta'><span>分数 "+m.score+"</span><i>·</i><span>"+priceStr(m)
+    + "</span><i>·</i><span>"+val+"</span>"+flag+"</div></div></div>";
 }
 const RECO_SEGS=[
   {k:"all",      t:"全部 · 总榜", title:"总榜前 5（综合最强）"},
@@ -497,18 +564,17 @@ const RECO_SEGS=[
 let recoRegion="all", recoData={};
 function renderSeg(){
   document.getElementById("recoSeg").innerHTML=RECO_SEGS.map(s=>
-    "<span class='chip"+(s.k===recoRegion?" active":"")+"' onclick='setRecoRegion(\""+s.k+"\")'>"+s.t+"</span>"
+    "<span class='segbtn"+(s.k===recoRegion?" active":"")+"' onclick='setRecoRegion(\""+s.k+"\")'>"+s.t+"</span>"
   ).join("");
 }
 function setRecoRegion(k){ recoRegion=k; renderSeg(); renderRecoList(); }
 function renderRecoList(){
   const seg=RECO_SEGS.find(s=>s.k===recoRegion)||RECO_SEGS[0];
   const list=recoData[recoRegion]||[];
-  // ★最划算 在当前视图自己的候选里选，保证标记一定可见
   let best=null;
   list.forEach(m=>{ if(m.value!=null && (best==null||m.value>best.value)) best=m; });
   let html="<div class='sect'>"+seg.title+"<span class='cnt'>共 "+list.length+" 个</span></div>";
-  if(!list.length){ html+="<div class='empty'>（暂无可推荐模型）</div>"; }
+  if(!list.length){ html+="<div class='empty'>暂无可推荐模型</div>"; }
   list.forEach((m,i)=>{ html+=candHtml(m,i,best); });
   document.getElementById("ansList").innerHTML=html;
 }
@@ -550,17 +616,18 @@ function renderBoard(){
     if(sort==="value") list=list.filter(m=>m.value!=null).sort((a,b)=>b.value-a.value);
     else list=list.sort((a,b)=>b.score-a.score);
   }
-  const head=["#","模型","区域","分数","价格(输入/输出)","性价比"];
+  const head=["#","模型","区域","分数","价格(输入/输出)","性价比","备注"];
   document.querySelector("#board thead").innerHTML="<tr>"+head.map(h=>"<th>"+h+"</th>").join("")+"</tr>";
   let body="";
   list.slice(0,30).forEach((m,i)=>{
     const badge = m.region==="国产"
       ? "<span class='badge cn'>国产</span>" : "<span class='badge fr'>国外</span>";
     const price = m.pin==null ? "—" : "$"+m.pin+"/"+m.pout;
-    const val = m.value!=null ? "<td class='topv'>"+m.value+"</td>" : "<td>—</td>";
-    const flag = (m.flags&&m.flags.length) ? "<td class='warn'>⚠"+(m.flags[0])+"</td>" : "";
-    body += "<tr><td class='rk'>"+(i+1)+"</td><td><b>"+m.model+"</b> <span class='org'>"+m.org+"</span></td>"
-      + "<td>"+badge+"</td><td>"+m.score+"</td><td>"+price+"</td>"+val+flag+"</tr>";
+    const val = m.value!=null ? "<td class='topv'>"+m.value+"</td>" : "<td class='dim'>—</td>";
+    const flag = (m.flags&&m.flags.length) ? "<td class='warn'>⚠ "+m.flags[0]+"</td>" : "<td class='dim'></td>";
+    body += "<tr><td class='rk"+(i===0?" top":"")+"'>"+(i+1)+"</td>"
+      + "<td class='m'><b>"+m.model+"</b><span class='org'>"+m.org+"</span></td>"
+      + "<td>"+badge+"</td><td class='num'>"+m.score+"</td><td class='dim'>"+price+"</td>"+val+flag+"</tr>";
   });
   document.querySelector("#board tbody").innerHTML=body;
 }
@@ -568,7 +635,8 @@ renderTabs();
 renderBoard();
 </script>
 </body>
-</html>"""
+</html>
+"""
 
 
 # ----------------------------------------------------------------------------
